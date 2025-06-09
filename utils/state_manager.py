@@ -1,106 +1,112 @@
 # utils/state_manager.py
 
 import streamlit as st
-from config.settings import SESSION_KEYS, PAGES
+from services.auth_service import AuthService
 
-def initialize_session_state():
-    """Initialize all session state variables"""
-    # Authentication
-    if SESSION_KEYS["AUTHENTICATED"] not in st.session_state:
-        st.session_state[SESSION_KEYS["AUTHENTICATED"]] = False
-    if SESSION_KEYS["USERNAME"] not in st.session_state:
-        st.session_state[SESSION_KEYS["USERNAME"]] = ""
-    if SESSION_KEYS["USERS"] not in st.session_state:
-        st.session_state[SESSION_KEYS["USERS"]] = {}
+class SessionManager:
+    """Manager untuk session state Streamlit"""
     
-    # Navigation
-    if SESSION_KEYS["CURRENT_PAGE"] not in st.session_state:
-        st.session_state[SESSION_KEYS["CURRENT_PAGE"]] = PAGES["FORM_INPUT"]
+    @staticmethod
+    def initialize_session():
+        """Initialize session state variables"""
+        if 'authenticated' not in st.session_state:
+            st.session_state.authenticated = False
+        
+        if 'user_data' not in st.session_state:
+            st.session_state.user_data = None
+        
+        if 'current_page' not in st.session_state:
+            st.session_state.current_page = 'auth'
     
-    # Financial data
-    if SESSION_KEYS["MONTHLY_BUDGET"] not in st.session_state:
-        st.session_state[SESSION_KEYS["MONTHLY_BUDGET"]] = 0
-    if SESSION_KEYS["CATEGORIES"] not in st.session_state:
-        st.session_state[SESSION_KEYS["CATEGORIES"]] = []
-    if SESSION_KEYS["EXPENSES"] not in st.session_state:
-        st.session_state[SESSION_KEYS["EXPENSES"]] = []
+    @staticmethod
+    def set_user_session(user_data):
+        """
+        Set user session after successful login
+        
+        Args:
+            user_data (dict): User data from database
+        """
+        st.session_state.authenticated = True
+        st.session_state.user_data = user_data
+        st.session_state.current_page = 'dashboard'
+    
+    @staticmethod
+    def clear_user_session():
+        """Clear user session (logout)"""
+        st.session_state.authenticated = False
+        st.session_state.user_data = None
+        st.session_state.current_page = 'auth'
+    
+    @staticmethod
+    def is_authenticated():
+        """Check if user is authenticated"""
+        return st.session_state.get('authenticated', False)
+    
+    @staticmethod
+    def get_current_user():
+        """Get current user data"""
+        if SessionManager.is_authenticated():
+            return st.session_state.get('user_data')
+        return None
+    
+    @staticmethod
+    def get_user_id():
+        """Get current user ID"""
+        user_data = SessionManager.get_current_user()
+        if user_data:
+            return user_data.get('user_id')
+        return None
+    
+    @staticmethod
+    def get_username():
+        """Get current username"""
+        user_data = SessionManager.get_current_user()
+        if user_data:
+            return user_data.get('username')
+        return None
 
+# Fungsi untuk kompatibilitas dengan kode yang sudah ada
 def authenticate_user(username, password):
-    """Authenticate user login"""
-    users = st.session_state.get(SESSION_KEYS["USERS"], {})
+    """
+    Authenticate user - wrapper untuk AuthService
     
-    if username in users and users[username] == password:
-        st.session_state[SESSION_KEYS["AUTHENTICATED"]] = True
-        st.session_state[SESSION_KEYS["USERNAME"]] = username
-        return True, "Selamat datang kembali!"
+    Args:
+        username (str): Username
+        password (str): Password
+        
+    Returns:
+        tuple: (success, message)
+    """
+    success, message, user_data = AuthService.authenticate_user(username, password)
+    
+    if success:
+        # Set session jika login berhasil
+        SessionManager.set_user_session(user_data)
+        return True, message
     else:
-        return False, "Username atau password salah."
+        return False, message
 
 def register_user(username, password):
-    """Register new user"""
-    users = st.session_state.get(SESSION_KEYS["USERS"], {})
+    """
+    Register new user - wrapper untuk AuthService
     
-    if username in users:
-        return False, "Username sudah terdaftar."
-    else:
-        st.session_state[SESSION_KEYS["USERS"]][username] = password
-        return True, "Pendaftaran berhasil! Silakan masuk."
+    Args:
+        username (str): Username
+        password (str): Password
+        
+    Returns:
+        tuple: (success, message)
+    """
+    return AuthService.register_user(username, password)
 
 def logout_user():
     """Logout current user"""
-    st.session_state[SESSION_KEYS["AUTHENTICATED"]] = False
-    st.session_state[SESSION_KEYS["USERNAME"]] = ""
+    SessionManager.clear_user_session()
+    return True, "Logout berhasil"
 
-def add_category(name, priority, urgency, frequency, impact):
-    """Add or update category"""
-    categories = st.session_state.get(SESSION_KEYS["CATEGORIES"], [])
-    
-    # Check if category exists
-    category_exists = False
-    for cat in categories:
-        if cat['name'] == name:
-            cat['priority'] = priority
-            cat['urgency'] = urgency
-            cat['frequency'] = frequency
-            cat['impact'] = impact
-            category_exists = True
-            break
-    
-    if not category_exists:
-        categories.append({
-            'name': name,
-            'priority': priority,
-            'urgency': urgency,
-            'frequency': frequency,
-            'impact': impact,
-            'allocation': 0,
-            'spent': 0,
-            'combined_score': 0
-        })
-    
-    st.session_state[SESSION_KEYS["CATEGORIES"]] = categories
-    return "diperbarui" if category_exists else "ditambahkan"
+def get_current_user_info():
+    """Get current user information"""
+    return SessionManager.get_current_user()
 
-def delete_category(category_name):
-    """Delete category and related expenses"""
-    categories = st.session_state.get(SESSION_KEYS["CATEGORIES"], [])
-    expenses = st.session_state.get(SESSION_KEYS["EXPENSES"], [])
-    
-    # Remove category
-    st.session_state[SESSION_KEYS["CATEGORIES"]] = [
-        cat for cat in categories if cat['name'] != category_name
-    ]
-    
-    # Remove related expenses
-    st.session_state[SESSION_KEYS["EXPENSES"]] = [
-        exp for exp in expenses if exp['category'] != category_name
-    ]
-
-def add_expense(category, amount):
-    """Add expense to category"""
-    expenses = st.session_state.get(SESSION_KEYS["EXPENSES"], [])
-    expenses.append({
-        'category': category,
-        'amount': amount
-    })
-    st.session_state[SESSION_KEYS["EXPENSES"]] = expenses
+# Initialize session saat module di-import
+SessionManager.initialize_session()
