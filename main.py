@@ -3,15 +3,17 @@
 import streamlit as st
 import os
 from dotenv import load_dotenv
-
+import time
 # Load environment variables
 load_dotenv()
 
 # Import modules
+from utils.calculations import calculate_allocation
 from styles.custom_css import apply_custom_css
 from components.auth import render_auth_page
 from utils.state_manager import SessionManager
 from config.database import DatabaseManager
+from pages.form_input import render_form_input
 
 # Page configuration
 st.set_page_config(
@@ -38,6 +40,13 @@ def main():
         render_auth_page()
     else:
         render_dashboard()
+
+      # Schedule allocation calculation
+    if st.session_state.get('last_calculation', 0) < time.time() - 60:  # Every 60 seconds
+        user_id = SessionManager.get_user_id()
+        if user_id:
+            calculate_allocation(user_id)
+        st.session_state['last_calculation'] = time.time()  
 
 def test_db_connection():
     """Test database connection dan tampilkan status"""
@@ -69,11 +78,9 @@ def render_dashboard():
     
     menu_options = [
         "📈 Dashboard",
-        "💰 Budget Management", 
-        "📝 Category Management",
-        "💸 Expense Tracking",
-        "📊 Reports",
-        "⚙️ Settings"
+        "📝 Form Input",
+        "⚙️ Settings",
+        
     ]
     
     selected_menu = st.sidebar.selectbox("Pilih Menu", menu_options)
@@ -81,14 +88,8 @@ def render_dashboard():
     # Content area
     if selected_menu == "📈 Dashboard":
         render_dashboard_content()
-    elif selected_menu == "💰 Budget Management":
-        st.info("Budget Management - Coming Soon!")
-    elif selected_menu == "📝 Category Management":
-        st.info("Category Management - Coming Soon!")
-    elif selected_menu == "💸 Expense Tracking":
-        st.info("Expense Tracking - Coming Soon!")
-    elif selected_menu == "📊 Reports":
-        st.info("Reports - Coming Soon!")
+    elif selected_menu == "📝 Form Input":
+        render_form_input()
     elif selected_menu == "⚙️ Settings":
         render_settings()
 
