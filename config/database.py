@@ -1,112 +1,78 @@
-# config/database.py
-
+# config/database.py - Pastikan method execute_query seperti ini
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import streamlit as st
 import os
-from contextlib import contextmanager
-
-class DatabaseConfig:
-    """Konfigurasi database PostgreSQL"""
-    
-    @staticmethod
-    def get_connection_params():
-        """
-        Mendapatkan parameter koneksi database
-        Bisa dari environment variables atau hardcode untuk development
-        """
-        return {
-            'host': os.getenv('DB_HOST', 'localhost'),
-            'database': os.getenv('DB_NAME', 'kosbudget_db'),
-            'user': os.getenv('DB_USER', 'postgres'),
-            'password': os.getenv('DB_PASSWORD', 'your_password'),
-            'port': os.getenv('DB_PORT', '5432')
-        }
-    
-    @staticmethod
-    @contextmanager
-    def get_db_connection():
-        """
-        Context manager untuk koneksi database
-        Otomatis close connection setelah selesai
-        """
-        conn = None
-        try:
-            params = DatabaseConfig.get_connection_params()
-            conn = psycopg2.connect(**params)
-            yield conn
-        except psycopg2.Error as e:
-            st.error(f"Database connection error: {e}")
-            if conn:
-                conn.rollback()
-            raise
-        finally:
-            if conn:
-                conn.close()
-    
-    @staticmethod
-    @contextmanager
-    def get_db_cursor(connection):
-        """
-        Context manager untuk cursor database
-        Menggunakan RealDictCursor untuk hasil dalam format dictionary
-        """
-        cursor = None
-        try:
-            cursor = connection.cursor(cursor_factory=RealDictCursor)
-            yield cursor
-        except psycopg2.Error as e:
-            st.error(f"Database cursor error: {e}")
-            raise
-        finally:
-            if cursor:
-                cursor.close()
 
 class DatabaseManager:
-    """Manager untuk operasi database umum"""
-    
     @staticmethod
-    def test_connection():
-        """Test koneksi database"""
+    def get_connection():
+        """Get database connection"""
         try:
-            with DatabaseConfig.get_db_connection() as conn:
-                with DatabaseConfig.get_db_cursor(conn) as cursor:
-                    cursor.execute("SELECT 1")
-                    result = cursor.fetchone()
-                    return True, "Database connection successful"
+            connection = psycopg2.connect(
+                host=os.getenv('DB_HOST', 'localhost'),
+                database=os.getenv('DB_NAME', 'kosbudget'),
+                user=os.getenv('DB_USER', 'postgres'),
+                password=os.getenv('DB_PASSWORD', ''),
+                port=os.getenv('DB_PORT', '5432')
+            )
+            return connection
         except Exception as e:
-            return False, f"Database connection failed: {str(e)}"
+            print(f"Error connecting to database: {e}")
+            return None
     
     @staticmethod
     def execute_query(query, params=None, fetch=False):
-        """
-        Execute query dengan parameter
+        """Execute database query with optional fetch"""
+        connection = None
+        cursor = None
         
-        Args:
-            query (str): SQL query
-            params (tuple): Parameter untuk query
-            fetch (bool): True jika ingin fetch hasil
-            
-        Returns:
-            tuple: (success, result/error_message)
-        """
         try:
-            with DatabaseConfig.get_db_connection() as conn:
-                with DatabaseConfig.get_db_cursor(conn) as cursor:
-                    cursor.execute(query, params)
-                    
-                    if fetch:
-                        if query.strip().upper().startswith('SELECT'):
-                            result = cursor.fetchall()
-                        else:
-                            result = cursor.fetchone()
-                        conn.commit()
-                        return True, result
-                    else:
-                        conn.commit()
-                        return True, "Query executed successfully"
-                        
-        except psycopg2.Error as e:
-            return False, f"Database error: {str(e)}"
+            connection = DatabaseManager.get_connection()
+            if not connection:
+                return False, "No database connection"
+            
+            cursor = connection.cursor(cursor_factory=RealDictCursor)
+            
+            if params:
+                cursor.execute(query, params)
+            else:
+                cursor.execute(query)
+            
+            if fetch:
+                result = cursor.fetchall()
+                # Convert to list of dicts for easier handling
+                result = [dict(row) for row in result] if result else []
+            else:
+                result = cursor.rowcount
+            
+            connection.commit()
+            return True, result
+            
         except Exception as e:
-            return False, f"Unexpected error: {str(e)}"
+            if connection:
+                connection.rollback()
+            print(f"Database error: {e}")
+            return False, str(e)
+            
+        finally:
+            if cursor:
+                cursor.close()
+            if connection:
+                connection.close()
+    
+    @staticmethod
+    def test_connection():
+        """Test database connection"""
+        try:
+            connection = DatabaseManager.get_connection()
+            if connection:
+                cursor = connection.cursor()
+                cursor.execute("SELECT 1;")
+                result = cursor.fetchone()
+                cursor.close()
+                connection.close()
+                return True, "Database connection successful"
+            else:
+                return False, "Failed to connect to database"
+        except Exception as e:
+            return False, f"Database connection error: {str(e)}"
